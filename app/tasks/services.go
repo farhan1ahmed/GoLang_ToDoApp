@@ -95,6 +95,12 @@ func (tApp *TaskApp) deleteTask(w http.ResponseWriter, r *http.Request) {
 			utils.JSONMsg(w, "No task found", http.StatusNotFound)
 			return
 		}
+		//Check and delete if there are any attachments for this task
+		if deltask.AttachmentName != "" {
+			filename := "u" + fmt.Sprintf("%.0f", userID) + "t" + idVar + deltask.AttachmentName
+			attachmentPath := attachmentFolder + "/" + filename
+			os.Remove(attachmentPath)
+		}
 
 		tApp.DB.Unscoped().Delete(TaskModel{}, idVar)
 		utils.JSONMsg(w, "Task deleted successfully", http.StatusOK)
