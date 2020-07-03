@@ -2,12 +2,13 @@ package app
 
 import (
 	"fmt"
+	"github.com/farhan1ahmed/GoLang_ToDoApp/app/auth"
+	"github.com/farhan1ahmed/GoLang_ToDoApp/app/tasks"
+	"github.com/farhan1ahmed/GoLang_ToDoApp/app/users"
 	"github.com/jinzhu/gorm"
 	"log"
 	"net/http"
 	"os"
-	"toDoApp/app/tasks"
-	"toDoApp/app/users"
 )
 
 var db *gorm.DB
@@ -28,9 +29,16 @@ func Start() {
 	}
 	defer db.Close()
 
-	tasksDB := tasks.TaskApp{db}
-	tasksDB.InitTodoModel()
-	usersDB := users.UserApp{db}
-	usersDB.InitUserModel()
+	taskApp := tasks.TaskApp{db}
+	taskApp.InitTodoModel()
+	taskApp.InitTaskHandlers()
+
+	userApp := users.UserApp{db}
+	userApp.InitUserModel()
+	userApp.InitUserHandlers()
+
+	authApp := auth.AuthApp{db}
+	authApp.InitBlackListModel()
+
 	log.Fatal(http.ListenAndServe(port, nil))
 }

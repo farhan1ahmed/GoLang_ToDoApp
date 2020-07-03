@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"toDoApp/app"
+	"github.com/farhan1ahmed/GoLang_ToDoApp/app"
 )
 
 func main() {

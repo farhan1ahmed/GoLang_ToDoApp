@@ -22,7 +22,9 @@ type TaskModel struct {
 }
 
 func (tApp *TaskApp) InitTodoModel() {
-	db := tApp.DB
-	db.AutoMigrate(&TaskModel{})
+	tApp.DB.AutoMigrate(&TaskModel{})
+}
+
+func (tApp *TaskApp) InitTaskHandlers() {
 	handleRequests(tApp)
 }

@@ -3,9 +3,18 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/joho/godotenv"
+	"log"
 	"net/http"
 	"time"
 )
+
+func init() {
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
+}
 
 type JsonResponse struct {
 	MSG string `json:"msg"`

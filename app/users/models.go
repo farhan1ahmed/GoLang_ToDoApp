@@ -1,9 +1,9 @@
 package users
 
 import (
+	"github.com/farhan1ahmed/GoLang_ToDoApp/app/tasks"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
-	"toDoApp/app/tasks"
 )
 
 type UserApp struct {
@@ -21,8 +21,8 @@ type UserModel struct {
 }
 
 func (uApp *UserApp) InitUserModel() {
-	db := uApp.DB
-	db.AutoMigrate(&UserModel{})
-
+	uApp.DB.AutoMigrate(&UserModel{})
+}
+func (uApp *UserApp) InitUserHandlers() {
 	handleRequests(uApp)
 }
