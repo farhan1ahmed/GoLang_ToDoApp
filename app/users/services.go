@@ -92,7 +92,7 @@ func (uApp *UserApp) confirmUser(w http.ResponseWriter, r *http.Request) {
 			utils.JSONMsg(w, "No such user exists in database", http.StatusOK)
 			return
 		}
-		confirm := r.URL.Query()["confirm"][0]
+		confirm := r.URL.Query().Get("confirm")
 		if confirm == "0" {
 			uApp.DB.Unscoped().Where("email = ?", email).Delete(&user)
 			utils.JSONMsg(w, "User deleted", http.StatusOK)

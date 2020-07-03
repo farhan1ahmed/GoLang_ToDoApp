@@ -6,12 +6,16 @@ import (
 	"github.com/farhan1ahmed/GoLang_ToDoApp/app/utils"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
 )
 
 var attachmentFolder string
+
+const defualtStart = "0"
+const defualtLimit = "5"
 
 func init() {
 	attachmentFolder = os.Getenv("ATTACHMENT_FOLDER")
@@ -20,11 +24,49 @@ func init() {
 func (tApp *TaskApp) allTasks(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		userID := r.Context().Value("id")
+		start := r.URL.Query().Get("start")
+		if start == "" {
+			start = defualtStart
+		}
+		startint, _ := strconv.Atoi(start)
+		limit := r.URL.Query().Get("limit")
+		if limit == "" {
+			limit = defualtLimit
+		}
+		limitint, _ := strconv.Atoi(limit)
+
 		var tasks []TaskModel
-		tApp.DB.Where("user_id = ?", userID).Find(&tasks)
+		var totalTasks int
+		tApp.DB.Where("user_id = ?", userID).Find(&tasks).Count(&totalTasks)
+		if startint > totalTasks {
+			utils.JSONMsg(w, "No page found", http.StatusNotFound)
+			return
+		}
+		tApp.DB.Where("user_id = ?", userID).Offset(start).Limit(limit).Find(&tasks)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(tasks)
+
+		resObj := make(map[string]interface{})
+		url := "/alltasks"
+		resObj["start"] = startint
+		resObj["limit"] = limitint
+		resObj["tasks"] = tasks
+		resObj["totalTasks"] = totalTasks
+		if start == defualtStart {
+			resObj["prevPage"] = ""
+		} else {
+			startPrev := math.Max(0, float64(startint-limitint))
+			s := fmt.Sprintf("%.0f", startPrev)
+			resObj["prevPage"] = url + "?start=" + s + "&limit=" + limit
+		}
+		if startint+limitint > totalTasks {
+			resObj["nextPage"] = ""
+		} else {
+			startNext := startint + limitint
+			resObj["nextPage"] = url + "?start=" + strconv.Itoa(startNext) + "&limit=" + limit
+		}
+
+		json.NewEncoder(w).Encode(resObj)
 	} else {
 		utils.MethodNotAllowed(w)
 	}
@@ -33,7 +75,7 @@ func (tApp *TaskApp) singleTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		userID := r.Context().Value("id")
 		var task TaskModel
-		idVar := r.URL.Query()["id"][0]
+		idVar := r.URL.Query().Get("id")
 		tApp.DB.Where("user_id = ?", userID).First(&task, idVar)
 
 		if task.ID == 0 {
@@ -88,7 +130,7 @@ func (tApp *TaskApp) createTask(w http.ResponseWriter, r *http.Request) {
 func (tApp *TaskApp) deleteTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodDelete {
 		userID := r.Context().Value("id")
-		idVar := r.URL.Query()["id"][0]
+		idVar := r.URL.Query().Get("id")
 		var deltask TaskModel
 		tApp.DB.Where("user_id = ?", userID).Find(&deltask, idVar)
 		if deltask.ID == 0 {
@@ -113,7 +155,7 @@ func (tApp *TaskApp) deleteTask(w http.ResponseWriter, r *http.Request) {
 func (tApp *TaskApp) updateTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPatch {
 		userID := r.Context().Value("id")
-		idVar := r.URL.Query()["id"][0]
+		idVar := r.URL.Query().Get("id")
 		var updateTask TaskModel
 		tApp.DB.Where("user_id = ?", userID).Find(&updateTask, idVar)
 		if updateTask.ID == 0 {
@@ -137,7 +179,7 @@ func (tApp *TaskApp) updateTask(w http.ResponseWriter, r *http.Request) {
 func (tApp *TaskApp) uploadAttachment(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPut {
 		userID := r.Context().Value("id")
-		idVar := r.URL.Query()["id"][0]
+		idVar := r.URL.Query().Get("id")
 		var taskUploadTo TaskModel
 		tApp.DB.Where("user_id = ?", userID).Find(&taskUploadTo, idVar)
 		if taskUploadTo.ID == 0 {
@@ -184,7 +226,7 @@ func (tApp *TaskApp) uploadAttachment(w http.ResponseWriter, r *http.Request) {
 func (tApp *TaskApp) downloadAttachment(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		userID := r.Context().Value("id")
-		idVar := r.URL.Query()["id"][0]
+		idVar := r.URL.Query().Get("id")
 		var task TaskModel
 		tApp.DB.Where("user_id = ?", userID).Find(&task, idVar)
 		if task.ID == 0 {
@@ -220,4 +262,31 @@ func (tApp *TaskApp) downloadAttachment(w http.ResponseWriter, r *http.Request) 
 		utils.MethodNotAllowed(w)
 	}
 
+}
+
+func (tApp *TaskApp) deleteAttachment(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodDelete {
+		userID := r.Context().Value("id")
+		idVar := r.URL.Query().Get("id")
+		var task TaskModel
+		tApp.DB.Where("user_id = ?", userID).Find(&task, idVar)
+		if task.ID == 0 {
+			utils.JSONMsg(w, "No task found", http.StatusNotFound)
+			return
+		}
+		if task.AttachmentName == "" {
+			utils.JSONMsg(w, "Task has no attachment", http.StatusNotFound)
+			return
+		}
+		filename := "u" + fmt.Sprintf("%.0f", userID) + "t" + idVar + task.AttachmentName
+		attachmentPath := attachmentFolder + "/" + filename
+		os.Remove(attachmentPath)
+
+		task.AttachmentName = ""
+		tApp.DB.Save(&task)
+		utils.JSONMsg(w, "File deleted successfully", http.StatusOK)
+
+	} else {
+		utils.MethodNotAllowed(w)
+	}
 }
