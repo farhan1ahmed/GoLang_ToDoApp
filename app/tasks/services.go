@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 var attachmentFolder string
@@ -285,6 +286,32 @@ func (tApp *TaskApp) deleteAttachment(w http.ResponseWriter, r *http.Request) {
 		task.AttachmentName = ""
 		tApp.DB.Save(&task)
 		utils.JSONMsg(w, "File deleted successfully", http.StatusOK)
+
+	} else {
+		utils.MethodNotAllowed(w)
+	}
+}
+
+func (tApp *TaskApp) similarTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		userID := r.Context().Value("id")
+		var tasks []TaskModel
+		tApp.DB.Where("user_id = ?", userID).Find(&tasks)
+
+		taskMap := make(map[string][]string)
+		var taskID string
+		for i, _ := range tasks {
+			taskID = strconv.FormatUint(uint64(tasks[i].ID), 10)
+			taskMap[tasks[i].Description] = append(taskMap[tasks[i].Description], taskID)
+		}
+
+		message := ""
+		for _, v := range taskMap {
+			sentence := "Task " + strings.Join(v[:len(v)-1], ", Task ")
+			sentence = sentence + " and Task " + v[len(v)-1] + " are similar tasks\n"
+			message = message + sentence
+		}
+		utils.JSONMsg(w, message, http.StatusOK)
 
 	} else {
 		utils.MethodNotAllowed(w)

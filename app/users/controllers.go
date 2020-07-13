@@ -10,4 +10,6 @@ func handleRequests(uApp *UserApp) {
 	http.HandleFunc("/confirm/", uApp.confirmUser)
 	http.HandleFunc("/login", uApp.loginUser)
 	http.Handle("/logout", auth.AuthMiddleware(http.HandlerFunc(uApp.logoutUser)))
+	http.HandleFunc("/forgotpassword", uApp.forgotPassword)
+	http.HandleFunc("/resetpassword/", uApp.resetPassword)
 }

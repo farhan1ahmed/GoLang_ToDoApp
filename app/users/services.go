@@ -6,14 +6,18 @@ import (
 	"fmt"
 	"github.com/farhan1ahmed/GoLang_ToDoApp/app/auth"
 	"github.com/farhan1ahmed/GoLang_ToDoApp/app/utils"
+	"github.com/jinzhu/gorm"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"net/smtp"
 	"os"
 	"regexp"
+	"sync"
+	"time"
 )
 
 var confirmURL string
+var resetURL string
 var senderMail string
 var senderPass string
 var smtpAddr string
@@ -22,6 +26,7 @@ var jwtSecret string
 
 func init() {
 	confirmURL = os.Getenv("CONFIRM_URL")
+	resetURL = os.Getenv("RESET_URL")
 	senderMail = os.Getenv("SENDER_MAIL")
 	senderPass = os.Getenv("SENDER_PASS")
 	smtpAddr = os.Getenv("SMTP_ADDR")
@@ -29,24 +34,21 @@ func init() {
 	jwtSecret = os.Getenv("JWT_SECRET")
 }
 
-func generateConfirmURL(email string) string {
+func generateEncodedURL(email string, endpoint string) string {
 	encoded := base64.URLEncoding.EncodeToString([]byte(email))
-	return confirmURL + "/" + encoded
+	return endpoint + "/" + encoded
 }
-func sendConfirmEmail(email string) {
+func sendEmail(toEmail string, msg string, wg *sync.WaitGroup) {
 	from := fmt.Sprintf("From: <%s>\r\n", senderMail)
-	to := fmt.Sprintf("From: <%s>\r\n", email)
-	subject := "Subject: Confirm Todo Account\r\n"
-	link := generateConfirmURL(email)
-	body := "Confirm: " + link + "?confirm=1" +
-		"\nNot you? Click: " + link + "?confirm=0"
-	msg := from + to + subject + "\r\n" + body
+	to := fmt.Sprintf("From: <%s>\r\n", toEmail)
+	emailBody := from + to + msg
 
 	auth := smtp.PlainAuth("", senderMail, senderPass, smtpHost)
-	err := smtp.SendMail(smtpAddr, auth, senderMail, []string{email}, []byte(msg))
+	err := smtp.SendMail(smtpAddr, auth, senderMail, []string{toEmail}, []byte(emailBody))
 	if err != nil {
 		fmt.Println(err.Error())
 	}
+	wg.Done()
 }
 
 func (uApp *UserApp) registerUser(w http.ResponseWriter, r *http.Request) {
@@ -67,15 +69,31 @@ func (uApp *UserApp) registerUser(w http.ResponseWriter, r *http.Request) {
 			utils.JSONMsg(w, exc.Error.Error(), http.StatusConflict)
 			return
 		}
-		sendConfirmEmail(newUser.Email)
+
+		subject := "Subject: Confirm Todo Account\r\n"
+		link := generateEncodedURL(newUser.Email, confirmURL)
+		body := "Confirm: " + link + "?confirm=1" +
+			"\nNot you? Click: " + link + "?confirm=0"
+		msg := subject + "\r\n" + body
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go sendEmail(newUser.Email, msg, &wg)
+		wg.Wait()
 		utils.JSONMsg(w, "User created successfully. Confirmation email sent", http.StatusCreated)
 
 	} else {
 		utils.MethodNotAllowed(w)
 	}
 }
-func decodeURL(url string) string {
-	re := regexp.MustCompile(`/confirm/(.*?)\?confirm=.$`)
+func decodeURL(url string, endpoint string) string {
+	var re *regexp.Regexp
+	switch endpoint {
+	case confirmURL:
+		re = regexp.MustCompile(`/confirm/(.*?)\?confirm=.$`)
+	case resetURL:
+		re = regexp.MustCompile(`/resetpassword/(.*?)$`)
+	}
 	encodedPart := re.FindStringSubmatch(url)[1]
 	decoded, err := base64.URLEncoding.DecodeString(encodedPart)
 	if err != nil {
@@ -85,11 +103,11 @@ func decodeURL(url string) string {
 }
 func (uApp *UserApp) confirmUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		email := decodeURL(r.URL.String())
+		email := decodeURL(r.URL.String(), confirmURL)
 		var user UserModel
-		uApp.DB.Unscoped().Where("email = ?", email).Find(&user)
+		uApp.DB.Where("email = ?", email).Find(&user)
 		if user.ID == 0 {
-			utils.JSONMsg(w, "No such user exists in database", http.StatusOK)
+			utils.JSONMsg(w, "No such user exists in database", http.StatusNotFound)
 			return
 		}
 		confirm := r.URL.Query().Get("confirm")
@@ -147,6 +165,7 @@ func (uApp *UserApp) logoutUser(w http.ResponseWriter, r *http.Request) {
 		tokenVal, err := auth.GetTokenValue(r)
 		if err != nil {
 			utils.JSONMsg(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 		auth.AddToBlackList(tokenVal)
 		accessCookie := http.Cookie{Name: "accessCookie", Value: "", MaxAge: -1}
@@ -156,4 +175,89 @@ func (uApp *UserApp) logoutUser(w http.ResponseWriter, r *http.Request) {
 	} else {
 		utils.MethodNotAllowed(w)
 	}
+}
+
+func (uApp *UserApp) forgotPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		var reqBody map[string]string
+		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		if err != nil {
+			utils.JSONMsg(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var user UserModel
+		email := reqBody["email"]
+		uApp.DB.Where("email=?", email).Find(&user)
+		if user.ID == 0 {
+			utils.JSONMsg(w, "No such email exists in the database", http.StatusBadRequest)
+			return
+		}
+		if user.FBuser {
+			utils.JSONMsg(w, "Can not change password: This is an OAuth registered account", http.StatusBadRequest)
+			return
+		}
+
+		subject := "Subject: Reset Password\r\n"
+		link := generateEncodedURL(email, resetURL)
+		body := "Follow the link to reset Password: " + link
+		msg := subject + "\r\n" + body
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go sendEmail(email, msg, &wg)
+		wg.Wait()
+		utils.JSONMsg(w, "Link to reset password sent on the provided email.", http.StatusOK)
+
+	} else {
+		utils.MethodNotAllowed(w)
+	}
+}
+
+func (uApp *UserApp) resetPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		email := decodeURL(r.URL.String(), resetURL)
+		var user UserModel
+		uApp.DB.Where("email = ?", email).Find(&user)
+		if user.ID == 0 {
+			utils.JSONMsg(w, "No such user exists in database", http.StatusNotFound)
+			return
+		}
+		var reqBody map[string]string
+		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		if err != nil {
+			utils.JSONMsg(w, "Password not provided", http.StatusBadRequest)
+			return
+		}
+		newPassword := reqBody["password"]
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+		user.Password = string(hashedPassword)
+		uApp.DB.Save(&user)
+		utils.JSONMsg(w, "Password changed successfully", http.StatusOK)
+	} else {
+		utils.MethodNotAllowed(w)
+	}
+}
+
+func ReminderEmail(taskAppDB *gorm.DB, userAppDB *gorm.DB) {
+	users, _ := userAppDB.Table("user_models").Select("id, email").Rows()
+	defer users.Close()
+	var id int
+	var email string
+	var title string
+	dateToday := time.Now().Format("2006-01-02")
+	var wg sync.WaitGroup
+	for users.Next() {
+		users.Scan(&id, &email)
+		tasks, _ := taskAppDB.Table("task_models").Select("title").Where("user_id=? AND finished=? AND due_date LIKE ?", id, false, "%"+dateToday+"%").Rows()
+		subject := "Subject: ToDo Reminder\r\n"
+		body := "Following tasks are due today: \n"
+		for tasks.Next() {
+			tasks.Scan(&title)
+			body = body + title + "\n"
+		}
+		msg := subject + "\r\n" + body
+		wg.Add(1)
+		go sendEmail(email, msg, &wg)
+	}
+	wg.Wait()
 }

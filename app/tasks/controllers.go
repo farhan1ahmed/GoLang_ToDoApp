@@ -14,5 +14,6 @@ func handleRequests(tApp *TaskApp) {
 	http.Handle("/upattach", auth.AuthMiddleware(http.HandlerFunc(tApp.uploadAttachment)))
 	http.Handle("/downattach", auth.AuthMiddleware(http.HandlerFunc(tApp.downloadAttachment)))
 	http.Handle("/deleteattach", auth.AuthMiddleware(http.HandlerFunc(tApp.deleteAttachment)))
+	http.Handle("/similartasks", auth.AuthMiddleware(http.HandlerFunc(tApp.similarTasks)))
 
 }

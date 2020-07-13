@@ -47,7 +47,7 @@ func AuthMiddleware(apiEndPoint http.Handler) http.Handler {
 		if err != nil {
 			utils.JSONMsg(w, err.Error(), http.StatusUnauthorized)
 		} else {
-			exist := CheckinBlackList(tokenVal)
+			exist := checkinBlackList(tokenVal)
 			if exist {
 				utils.JSONMsg(w, "Invalid token", http.StatusUnauthorized)
 			} else {
@@ -69,7 +69,7 @@ func AuthMiddleware(apiEndPoint http.Handler) http.Handler {
 	})
 }
 
-func CheckinBlackList(val string) bool {
+func checkinBlackList(val string) bool {
 	var token BlackListToken
 	tokendb.Where("token_val = ?", val).Find(&token)
 	if token.TokenVal != "" {
