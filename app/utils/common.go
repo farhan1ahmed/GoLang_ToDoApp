@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/joho/godotenv"
@@ -53,4 +54,40 @@ func Dateparser(dateISO string) time.Time {
 		fmt.Println(err.Error())
 	}
 	return date
+}
+
+func CronJob(ctx context.Context, startTriggerTime time.Time, delay time.Duration) <- chan time.Time {
+	delayTriggerChan := make(chan time.Time, 1)
+	waitFor := time.Until(startTriggerTime)
+	//Make sure that the start time is not zero
+	if !startTriggerTime.IsZero(){
+		// if the starting time has passed already, set the starting time to the next triggering event
+		if waitFor < 0 {
+			timeTillNext := waitFor - delay
+			floorTimes := timeTillNext / delay * - 1
+			startTriggerTime = startTriggerTime.Add(floorTimes * delay)
+		}
+	}
+
+	//Go routine for cron job task
+	go func() {
+		//Start the scheduled task for the first time
+		t := <-time.After(time.Until(startTriggerTime))
+		delayTriggerChan <- t
+
+		//After the first triggering event, start a ticker to check for future triggering events
+		ticker := time.NewTicker(delay)
+		defer ticker.Stop()
+
+		for{
+			select{
+			case trigger := <-ticker.C:
+				delayTriggerChan <- trigger
+			case <-ctx.Done():
+				close(delayTriggerChan)
+				return
+			}
+		}
+	}()
+	return delayTriggerChan
 }

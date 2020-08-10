@@ -239,25 +239,38 @@ func (uApp *UserApp) resetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func ReminderEmail(taskAppDB *gorm.DB, userAppDB *gorm.DB) {
+	var noOfThreadsSem = make(chan int, 3)
 	users, _ := userAppDB.Table("user_models").Select("id, email").Rows()
 	defer users.Close()
 	var id int
 	var email string
 	var title string
-	dateToday := time.Now().Format("2006-01-02")
+	dateTomorrow := time.Now().Add(time.Hour*24).Format("2006-01-02")
 	var wg sync.WaitGroup
 	for users.Next() {
 		users.Scan(&id, &email)
-		tasks, _ := taskAppDB.Table("task_models").Select("title").Where("user_id=? AND finished=? AND due_date LIKE ?", id, false, "%"+dateToday+"%").Rows()
+		tasks, err := taskAppDB.Table("task_models").Select("title").Where("user_id=? AND finished=? AND due_date LIKE ?", id, false, "%"+dateTomorrow+"%").Rows()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
 		subject := "Subject: ToDo Reminder\r\n"
 		body := "Following tasks are due today: \n"
-		for tasks.Next() {
+		msg := subject + "\r\n"
+		taskExists := false
+		for tasks.Next(){
+			taskExists = true
 			tasks.Scan(&title)
 			body = body + title + "\n"
+		if taskExists {
+			wg.Add(1)
+			noOfThreadsSem <- 1
+			go func() {
+				msg = msg + body
+				fmt.Println("Sending reminder Email to " + email)
+				sendEmail(email, msg, &wg)
+				<- noOfThreadsSem
+			}()
+			}
 		}
-		msg := subject + "\r\n" + body
-		wg.Add(1)
-		go sendEmail(email, msg, &wg)
-	}
 	wg.Wait()
-}
+}}

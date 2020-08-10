@@ -1,11 +1,12 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"github.com/farhan1ahmed/GoLang_ToDoApp/app/auth"
 	"github.com/farhan1ahmed/GoLang_ToDoApp/app/tasks"
 	"github.com/farhan1ahmed/GoLang_ToDoApp/app/users"
-	"github.com/go-co-op/gocron"
+	"github.com/farhan1ahmed/GoLang_ToDoApp/app/utils"
 	"github.com/jinzhu/gorm"
 	"log"
 	"net/http"
@@ -18,12 +19,16 @@ var err error
 
 var databaseLoc string
 var port string
-var scheduler *gocron.Scheduler
+var START_TIME string
+var DELAY_TIME time.Duration
+var ctx context.Context
 
 func init() {
 	databaseLoc = os.Getenv("SQLITE_DATABASE")
 	port = os.Getenv("PORT")
-	scheduler = gocron.NewScheduler(time.Now().Location())
+	START_TIME = time.Now().Format("2006-01-02")
+	DELAY_TIME = time.Hour * 24   // 1 day
+	ctx = context.Background()
 }
 
 func Start() {
@@ -42,11 +47,14 @@ func Start() {
 	userApp.InitUserModel()
 	userApp.InitUserHandlers()
 
-	scheduler.Every(1).Day().At("17:14:00").Do(users.ReminderEmail, taskApp.DB, userApp.DB)
-	scheduler.StartAsync()
-
 	authApp := auth.AuthApp{db}
 	authApp.InitBlackListModel()
 
+	go func() {
+		for trigger := range utils.CronJob(ctx, utils.Dateparser(START_TIME), DELAY_TIME) {
+			fmt.Println(trigger)
+			users.ReminderEmail(taskApp.DB, userApp.DB)
+		}
+	}()
 	log.Fatal(http.ListenAndServe(port, nil))
 }
